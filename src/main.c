@@ -18,13 +18,13 @@
 #include <zsf/map/ch.h>
 
 #define FNL_IMPL
-#include "fastnoise.h"
+#include "ext/fastnoise.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "ext/stb_image_write.h"
 
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "stb_image_resize.h"
+#include "ext/stb_image_resize.h"
 
 #define HELP_INTRO\
     "Noise Explorer by zakarouf 2022 - 2023\n"\
