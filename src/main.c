@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <z_/types/record.h>
 #include <z_/types/base_util.h>
@@ -142,6 +143,13 @@ void oft_replace_chlist(OFormat *oft, const char *charl, z__size len)
     oft->ch_lenUsed = len;
 }
 
+void oft_change_color(OFormat *oft, z__size idx, ColorRGB fg, ColorRGB bg) {
+    if(idx >= oft->color_lenUsed) return;
+
+    oft->color.bg[idx] = bg;
+    oft->color.fg[idx] = fg;
+}
+
 void oft_clr_expand(OFormat *oft, z__size by)
 {
     oft->color_len += by;
@@ -185,6 +193,7 @@ void oft_push_color_map(
     if(fdmin > oft->color_lenUsed) oft->color_lenUsed = fdmin;
 }
 
+
 ColorRGB clr_add(ColorRGB x, ColorRGB y)
 {   
     ColorRGB z;
@@ -213,11 +222,109 @@ ColorRGB clr_div(ColorRGB x, ColorRGB y)
     return z;
 }
 
-void oft_change_color(OFormat *oft, z__size idx, ColorRGB fg, ColorRGB bg) {
-    if(idx >= oft->color_lenUsed) return;
+int oft_push_color_map_strparse(char const *str, OFormat *oft, int use_range)
+{
+    int ret = 1;
+    z__size from = oft->color_lenUsed, to = oft->color_lenUsed;
+    ColorMathFn *colorstepmethod;
+    ColorRGB cl[4] = {0};
 
-    oft->color.bg[idx] = bg;
-    oft->color.fg[idx] = fg;
+    if(strncmp(str, "add", 3) == 0) {
+        colorstepmethod = clr_add;
+    } else if(strncmp(str, "sub", 3) == 0) {
+        colorstepmethod = clr_sub;
+    } else if(strncmp(str, "mul", 3) == 0) {
+        colorstepmethod = clr_mul;
+    } else if(strncmp(str, "div", 3) == 0) {
+        colorstepmethod = clr_div;
+    } else {
+        colorstepmethod = clr_add;
+        ret = 0;
+    }
+
+    if(use_range) {
+        sscanf(str+4, "%zu %zu "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx"
+                    , &from, &to
+                    , &cl[0].r, &cl[0].g, &cl[0].b
+                    , &cl[1].r, &cl[1].g, &cl[1].b
+                    , &cl[2].r, &cl[2].g, &cl[2].b
+                    , &cl[3].r, &cl[3].g, &cl[3].b);
+    } else {
+        sscanf(str+4, "%zu "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx "
+                      "%02hhx%02hhx%02hhx"
+                    , &to
+                    , &cl[0].r, &cl[0].g, &cl[0].b
+                    , &cl[1].r, &cl[1].g, &cl[1].b
+                    , &cl[2].r, &cl[2].g, &cl[2].b
+                    , &cl[3].r, &cl[3].g, &cl[3].b);
+
+    }
+
+    oft_push_color_map(oft, from, to, cl[0], cl[1], cl[2], cl[3], colorstepmethod);
+
+    return ret;
+}
+
+int oft_push_color_strparse(char const *str, OFormat *oft)
+{
+    ColorRGB cl[2];
+    int ret = sscanf(str, "%02hhx%02hhx%02hhx "
+                          "%02hhx%02hhx%02hhx"
+                        , &cl[0].r, &cl[0].g, &cl[0].b
+                        , &cl[1].r, &cl[1].g, &cl[1].b);
+
+    oft_push_color(oft, cl[0], cl[1]);
+    return ret;
+}
+
+typedef union oft_command_parse_result {
+    z__RecordX(
+        (z__u8,(1
+                , color_changed
+                , ch_changed))
+    ) st;
+    z__u32 raw;
+} oft_command_parse_result;
+
+oft_command_parse_result oft_command_parse(char const *str, OFormat *oft)
+{
+    oft_command_parse_result ret = {0};
+    switch(str[0]) {
+        break; case 'p': oft_push_color_strparse(str+2, oft); ret.st.color_changed = 1;
+        break; case 'r': oft_push_color_map_strparse(str+2, oft, true); ret.st.color_changed = 1;
+        break; case 'l': oft_push_color_map_strparse(str+2, oft, false); ret.st.color_changed = 1;
+        break; case 'c': {
+            const char *tmp = str + 2;
+            #define check(s) (s != '\n' && s != '\t' && isprint(s))
+            while(check(*tmp)) tmp += 1;
+            oft_replace_chlist(oft, str + 2, tmp - str + 2);
+            ret.st.ch_changed = 1;
+        }
+    }
+    return ret;
+}
+
+oft_command_parse_result oft_readFromFile(OFormat *oft, char const *filepath)
+{
+    oft_command_parse_result res = {0};
+    FILE *fp = fopen(filepath, "r");
+    if(fp == NULL) return res;
+    
+    z__String tmp = z__String_new(1024);
+    while(fgets(tmp.data, tmp.len, fp) != NULL) {
+        tmp.data[tmp.len-1] = 0;
+        res.raw |= oft_command_parse(tmp.data, oft).raw;
+    }
+
+    fclose(fp);
+    return res;
 }
 
 #if 0
@@ -371,30 +478,31 @@ void gen_map_seg(Map *map, z__Vint2 end, OFormat *oft, fnl_state *noise, int sta
 }
 #endif
 
-void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, int startx, int starty)
+void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, z__u32 x, z__u32 y)
 {
     char key = 0, tmpkey;
     Map *mapbg = z__MALLOC(sizeof(*mapbg));
     zsf_MapCh_createEmpty(mapbg, map->size.x, map->size.y, map->size.z, map->chunkRadius);
 
-    fputs(z__ansi_scr((jump), (clear)), stdout);
+    fputs(z__ansi_scr((cur_hide), (jump), (clear)), stdout);
+    z__termio_echo(false);
     while(key != 'q') {
         switch(key) {
-            break; case 'w': starty--;
-            break; case 's': starty++;
-            break; case 'a': startx--;
-            break; case 'd': startx++;
+            break; case 'w': y--;
+            break; case 's': y++;
+            break; case 'a': x--;
+            break; case 'd': x++;
 
-            break; case 'W': starty -= 4;
-            break; case 'S': starty += 4;
-            break; case 'A': startx -= 4;
-            break; case 'D': startx += 4;
+            break; case 'W': y -= 4;
+            break; case 'S': y += 4;
+            break; case 'A': x -= 4;
+            break; case 'D': x += 4;
 
             break; case '1': draw = draw_map_char;
             break; case '2': draw = draw_map_bgcolor;
         }
 
-        gen_map(map, oft, noise, startx, starty);
+        gen_map(map, oft, noise, x, y);
 
         fputs(z__ansi_scr((jump)), stdout);
         draw(map, oft);
@@ -404,6 +512,11 @@ void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, int startx,
         key = tmpkey? tmpkey: key;
         z__time_msleep(40);
     }
+    fputs(z__ansi_scr((cur_show)), stdout);
+    z__termio_echo(true);
+
+    fprintf(stdout, "x - %u\n"
+                    "y - %u\n", x, y);
 }
 
 fnl_noise_type get_fnlnoisetype(char *arg)
@@ -434,37 +547,25 @@ Drawfn* get_drawmethod(char *arg)
     return draw_map_bgcolor;
 }
 
-ColorMathFn *get_colorstepmethod(char *arg)
+struct ne_state {
+    z__u32 witdh, height;
+    z__i32 x, y;
+    fnl_state noise;
+    z__u32 color;
+    char const *write_to_file_name;
+    z__u32 startx, starty;
+    Drawfn *draw;
+    char write_to_file:1
+       , read_color:1
+       , no_print:1
+       , explorer:1
+       , custom_oft_colorl:1
+       , verbose:1;
+};
+
+struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
 {
-    char **s = &arg;
-    z__argp_start(s, 0, 1) {
-        z__argp_ifarg_custom("add")     return clr_add;
-        z__argp_elifarg_custom("sub")   return clr_sub;
-        z__argp_elifarg_custom("mul")   return clr_mul;
-        z__argp_elifarg_custom("div")   return clr_div;
-    }
-
-    printf("`%s` Not a Color Step Method, Defaulting to Add\n", *s);
-    return clr_add;
-
-}
-
-int main(int argc, char *argv[])
-{
-    struct {
-        z__u32 witdh, height;
-        z__i32 x, y;
-        fnl_state noise;
-        z__u32 color;
-        char const *write_to_file_name;
-        z__u32 startx, starty;
-        Drawfn *draw;
-        char write_to_file:1
-           , read_color:1
-           , no_print:1
-           , explorer:1
-           , custom_oft_colorl:1;
-    } ne = { 
+    struct ne_state ne = { 
         .height = 10
       , .witdh = 10
       , .noise = fnlCreateState()
@@ -472,12 +573,6 @@ int main(int argc, char *argv[])
       , .write_to_file_name = "stdout.png"
       , .draw = draw_map_bgcolor
     };
-
-    /* Color and Char Format */
-    OFormat oft = oft_new(
-            "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
-          , sizeof "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. " -1);
-
 
     z__argp_start(argv, 1, argc) {
         /**
@@ -537,68 +632,24 @@ int main(int argc, char *argv[])
          */
         z__argp_elifarg_custom("--cc") {
             z__argp_next();
-            oft_replace_chlist(&oft, z__argp_get(), strlen(z__argp_get()));
+            oft_replace_chlist(oft, z__argp_get(), strlen(z__argp_get()));
         }
 
         z__argp_elifarg(&ne.color, "-c", "--color_num")
 
-        z__argp_elifarg_custom("-cp") {
+        z__argp_elifarg_custom("--cmd") {
             z__argp_next();
-            ColorRGB cl[2] = {0};
-            sscanf(z__argp_get(), "%hhu,%hhu,%hhu", &cl[0].r, &cl[0].g, &cl[0].b); z__argp_next();
-            sscanf(z__argp_get(), "%hhu,%hhu,%hhu", &cl[1].r, &cl[1].g, &cl[1].b);
-            oft_push_color(&oft, cl[0], cl[1]);
+            oft_command_parse(z__argp_get(), oft);
             ne.custom_oft_colorl = 1;
         }
 
-        z__argp_elifarg_custom("-cp") {
+        z__argp_elifarg_custom("--cmdfile") {
             z__argp_next();
-            ColorRGB cl[2] = {0};
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &cl[0].r, &cl[0].g, &cl[0].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &cl[1].r, &cl[1].g, &cl[1].b);
-            oft_push_color(&oft, cl[0], cl[1]);
-            ne.custom_oft_colorl = 1;
+            ne.custom_oft_colorl |= oft_readFromFile(oft, z__argp_get()).st.color_changed;
         }
 
-        z__argp_elifarg_custom("--clprx") {
-            z__argp_next();
-            ColorMathFn *clrfn = get_colorstepmethod(z__argp_get()); z__argp_next();
-            ColorRGB clr[4] = {0};
-            z__u32 f = 0, t = 0;
-
-            sscanf(z__argp_get(), "%u", &f); z__argp_next();
-            sscanf(z__argp_get(), "%u", &t); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[0].r, &clr[0].g, &clr[0].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[1].r, &clr[1].g, &clr[1].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[2].r, &clr[2].g, &clr[2].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[3].r, &clr[3].g, &clr[3].b);
-
-            oft_push_color_map(
-                &oft, f, t, clr[0], clr[1], clr[2], clr[3], clrfn);
-            ne.custom_oft_colorl = 1;
-        }
-
-        z__argp_elifarg_custom("--clpx") {
-            z__argp_next();
-            ColorMathFn *clrfn = get_colorstepmethod(z__argp_get()); z__argp_next();
-            ColorRGB clr[4] = {0};
-            z__u32 t = 0;
-
-            sscanf(z__argp_get(), "%u", &t); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[0].r, &clr[0].g, &clr[0].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[1].r, &clr[1].g, &clr[1].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[2].r, &clr[2].g, &clr[2].b); z__argp_next();
-            sscanf(z__argp_get(), "%02hhx%02hhx%02hhx", &clr[3].r, &clr[3].g, &clr[3].b);
-
-            oft_push_color_map(
-                &oft, oft.color_lenUsed, t, clr[0], clr[1], clr[2], clr[3], clrfn);
-            ne.custom_oft_colorl = 1;
-        }
-
-
-        z__argp_elifarg_custom("-cf", "--colorfile") {
-            ne.read_color = 1;
-            //ne.bg_colorlist = fetch_color(z__argp_get());
+        z__argp_elifarg_custom("-v", "--verbose") {
+            ne.verbose = 1;
         }
 
         /**
@@ -606,10 +657,75 @@ int main(int argc, char *argv[])
          */
         z__argp_elifarg_custom("-?", "--help") {
             puts(HELP_INTRO HELP_TXT);
-            return 0;
+            return ne;
         }
     }
 
+    return ne;
+}
+
+void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
+{
+    fputs( "\n"
+         "NE Report\n"
+         "==========", stdout);
+
+    z__u32 tx, ty;
+    z__termio_get_term_size(&tx, &ty);
+
+    fprintf(stdout,
+        "\n" "Term Size: %d x %d"
+        "\n" "Map Size: %d x %d"
+        "\n" "Oft charlist: %zu"
+        "\n" "Oft colorlist: %zu"
+        "\n"
+        , tx, ty
+        , map->size.x, map->size.y
+        , oft->ch_lenUsed
+        , oft->color_lenUsed
+    );
+
+    fputs( "\n"
+         "Oft Colors\n"
+         "===========\n"
+         "  fg      bg", stdout);
+
+    for (size_t i = 0; i < oft->color_lenUsed; i++) {
+        ColorRGB bg = oft->color.bg[i];
+        ColorRGB fg = oft->color.fg[i];
+        fprintf(stdout, "\n" 
+            "%02hhx%02hhx%02hhx %02hhx%02hhx%02hhx"
+            , fg.r, fg.g, fg.b, bg.r, bg.g, bg.b);
+    }
+
+    fputc('\n', stdout);
+
+    fputs( "\n"
+         "System\n"
+         "=======", stdout);
+    fprintf(stdout,
+        "\n" "Ram Usage: %zu bytes"
+        "\n" "Map Size: %zu bytes + Struct %zu bytes"
+        "\n" "Oft Color: %zu bytes"
+        "\n" "Oft Char: %zu bytes"
+    , z__sys_getRamUsage()
+    , sizeof(**map->chunks) * map->size.x * map->size.y * map->size.z * map->chunkAndObjCount, sizeof(*map)
+    , sizeof(*oft->color.bg) * 2 * oft->color_len
+    , sizeof(*oft->ch) * oft->ch_len);
+
+    fputc('\n', stdout);
+}
+
+int main(int argc, char *argv[])
+{
+
+    /* Color and Char Format */
+    OFormat oft = oft_new(
+            "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
+          , sizeof "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. " -1);
+
+    
+    struct ne_state ne = argparse(argv, argc, &oft);
 
     /**
      * Auto Generate Color Map if not set by the user.
@@ -636,11 +752,12 @@ int main(int argc, char *argv[])
     if(!ne.explorer) {
         if(!ne.no_print) {
             ne.draw(map, &oft);
+            fputs(z__ansi_fmt((plain)), stdout);
         }
     } else {
         z__u32 x, y;
         z__termio_get_term_size(&x, &y);
-        if(x > map->size.x || y > map->size.y) {
+        if(x > map->size.x && y > map->size.y) {
             explorer(map, &oft, &ne.noise, ne.draw, ne.x, ne.y);
         } else {
             printf("Your Terminal Size %d rows, %d colums are too small for generated noise map: %d x %d"
@@ -652,6 +769,10 @@ int main(int argc, char *argv[])
         Image img = Image_newFrom_map(map, &oft);
         Image_write_png(ne.write_to_file_name, &img);
         Image_free(&img);
+    }
+
+    if(ne.verbose) {
+        print_state_details(&ne, &oft, map);
     }
 
     oft_delete(&oft);
