@@ -56,12 +56,10 @@
     "\n"\
     "-r     --write [S]         Write to a named[S] file\n"\
     "\n"\
-    "-f     --file [S]              Read Color and Char format from file\n"\
-    "-cc    --charlist [S]          Get Character maplist, lower to higher\n"\
-    "--cp [r,g,b] [r,g,b]           Push Color, disables auto-gen colors\n"\
-    "--clp [S] [N] [N] [r,g,b]x4    Push a generated color map\n"\
+    "--cmd \"[CMD]\"\n"\
+    "--cmdfile [FILE]           Read Color and Char format from file\n"\
     "\n"\
-    "-np    --noprint           Toggle oof terminal print\n"\
+    "-p    --noprint            Toggle oof terminal print\n"\
     "-d     --draw [S]          Set in Draw Mode/Method\n"\
     "           | char          Only Characters, Colorless\n"\
     "           | obg           Only Background Color\n"\
@@ -97,6 +95,23 @@ typedef struct OFormat {
 
 typedef void (Drawfn)(Map *map, OFormat *oft);
 typedef ColorRGB (ColorMathFn)(ColorRGB, ColorRGB);
+
+struct ne_state {
+    z__u32 witdh, height;
+    z__i32 x, y;
+    fnl_state noise;
+    z__u32 color;
+    char const *write_to_file_name;
+    z__u32 startx, starty;
+    Drawfn *draw;
+    char write_to_file:1
+       , read_color:1
+       , no_print:1
+       , explorer:1
+       , custom_oft_colorl:1
+       , verbose:1
+       , exit:1;
+};
 
 void die(const char *msg)
 {
@@ -519,151 +534,6 @@ void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, z__u32 x, z
                     "y - %u\n", x, y);
 }
 
-fnl_noise_type get_fnlnoisetype(char *arg)
-{
-    char **s = &arg;
-    z__argp_start(s, 0, 1) {
-        z__argp_ifarg_custom("perlin")      return FNL_NOISE_PERLIN;
-        z__argp_elifarg_custom("os2")       return FNL_NOISE_OPENSIMPLEX2;
-        z__argp_elifarg_custom("os2s")      return FNL_NOISE_OPENSIMPLEX2S;
-        z__argp_elifarg_custom("cell")      return FNL_NOISE_CELLULAR;
-        z__argp_elifarg_custom("val")       return FNL_NOISE_VALUE;
-        z__argp_elifarg_custom("valc")      return FNL_NOISE_VALUE_CUBIC;
-    }
-
-    printf("`%s` Not a Valid Noise Type, Defaulting to Perlin\n", *s);
-    return FNL_NOISE_PERLIN;
-}
-
-Drawfn* get_drawmethod(char *arg)
-{
-    char **s = &arg;
-    z__argp_start(s, 0, 1) {
-        z__argp_ifarg_custom("char")    return draw_map_char;
-        z__argp_elifarg_custom("obg")      return draw_map_bgcolor;
-    }
-
-    printf("`%s` Not a Valid Draw Method, Defaulting to Only BG Color\n", *s);
-    return draw_map_bgcolor;
-}
-
-struct ne_state {
-    z__u32 witdh, height;
-    z__i32 x, y;
-    fnl_state noise;
-    z__u32 color;
-    char const *write_to_file_name;
-    z__u32 startx, starty;
-    Drawfn *draw;
-    char write_to_file:1
-       , read_color:1
-       , no_print:1
-       , explorer:1
-       , custom_oft_colorl:1
-       , verbose:1;
-};
-
-struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
-{
-    struct ne_state ne = { 
-        .height = 10
-      , .witdh = 10
-      , .noise = fnlCreateState()
-      , .color = 255
-      , .write_to_file_name = "stdout.png"
-      , .draw = draw_map_bgcolor
-    };
-
-    z__argp_start(argv, 1, argc) {
-        /**
-         * Basic Stuff
-         */
-        z__argp_ifarg(&ne.witdh, "-w", "--width")
-        z__argp_elifarg(&ne.height, "-h", "--height")
-        
-        z__argp_elifarg(&ne.x, "-x", "--startx")
-        z__argp_elifarg(&ne.y, "-y", "--starty")
-
-        /**
-         * Noise Stuff
-         */
-        z__argp_elifarg_custom("-nt", "--noise_type") {
-            z__argp_next();
-            ne.noise.noise_type = get_fnlnoisetype(z__argp_get());
-        }
-        z__argp_elifarg(&ne.noise.seed, "-ns", "--noise_seed")
-        z__argp_elifarg(&ne.noise.frequency, "-nf", "--noise_freq")
-        z__argp_elifarg(&ne.noise.gain, "-ng", "--noise_gain")
-        z__argp_elifarg(&ne.noise.octaves, "-no", "--noise_oct")
-
-        z__argp_elifarg(&ne.noise.cellular_jitter_mod, "--cellj")
-        z__argp_elifarg(&ne.noise.domain_warp_amp, "--domamp")
-
-        /**
-         * Write to a png file
-         */
-        z__argp_elifarg_custom("-r", "--write") {
-            z__argp_next();
-            ne.write_to_file = 1;
-            ne.write_to_file_name = z__argp_get();
-        }
-
-        /**
-         * Explorer Mode
-         */
-        z__argp_elifarg_custom("-e") {
-            ne.explorer = 1;
-        }
-
-        /**
-         * Draw Stuff
-         */
-        z__argp_elifarg_custom("-np", "--noprint") {
-           ne.no_print = 1; 
-        }
-
-        z__argp_elifarg_custom("-d", "--draw") {
-            z__argp_next();
-            ne.draw = get_drawmethod(z__argp_get());
-        }
-
-        /**
-         * OFormat Stuff
-         */
-        z__argp_elifarg_custom("--cc") {
-            z__argp_next();
-            oft_replace_chlist(oft, z__argp_get(), strlen(z__argp_get()));
-        }
-
-        z__argp_elifarg(&ne.color, "-c", "--color_num")
-
-        z__argp_elifarg_custom("--cmd") {
-            z__argp_next();
-            oft_command_parse(z__argp_get(), oft);
-            ne.custom_oft_colorl = 1;
-        }
-
-        z__argp_elifarg_custom("--cmdfile") {
-            z__argp_next();
-            ne.custom_oft_colorl |= oft_readFromFile(oft, z__argp_get()).st.color_changed;
-        }
-
-        z__argp_elifarg_custom("-v", "--verbose") {
-            ne.verbose = 1;
-        }
-
-        /**
-         * Help
-         */
-        z__argp_elifarg_custom("-?", "--help") {
-            puts(HELP_INTRO HELP_TXT);
-            return ne;
-        }
-    }
-
-    return ne;
-}
-
 void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
 {
     fputs( "\n"
@@ -716,16 +586,152 @@ void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
     fputc('\n', stdout);
 }
 
+fnl_noise_type get_fnlnoisetype(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("perlin")      return FNL_NOISE_PERLIN;
+        z__argp_elifarg_custom("os2")       return FNL_NOISE_OPENSIMPLEX2;
+        z__argp_elifarg_custom("os2s")      return FNL_NOISE_OPENSIMPLEX2S;
+        z__argp_elifarg_custom("cell")      return FNL_NOISE_CELLULAR;
+        z__argp_elifarg_custom("val")       return FNL_NOISE_VALUE;
+        z__argp_elifarg_custom("valc")      return FNL_NOISE_VALUE_CUBIC;
+    }
+
+    printf("`%s` Not a Valid Noise Type, Defaulting to Perlin\n", *s);
+    return FNL_NOISE_PERLIN;
+}
+
+Drawfn* get_drawmethod(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("char")    return draw_map_char;
+        z__argp_elifarg_custom("obg")      return draw_map_bgcolor;
+    }
+
+    printf("`%s` Not a Valid Draw Method, Defaulting to Only BG Color\n", *s);
+    return draw_map_bgcolor;
+}
+
+struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
+{
+    struct ne_state ne = { 
+        .height = 15
+      , .witdh = 40
+      , .noise = fnlCreateState()
+      , .color = 255
+      , .write_to_file_name = "stdout.png"
+      , .draw = draw_map_bgcolor
+    };
+
+    z__argp_start(argv, 1, argc) {
+        /**
+         * Basic Stuff
+         */
+        z__argp_ifarg(&ne.witdh, "-w", "--width")
+        z__argp_elifarg(&ne.height, "-h", "--height")
+        
+        z__argp_elifarg(&ne.x, "-x", "--startx")
+        z__argp_elifarg(&ne.y, "-y", "--starty")
+
+        /**
+         * Noise Stuff
+         */
+        z__argp_elifarg_custom("-nt", "--noise_type") {
+            z__argp_next();
+            ne.noise.noise_type = get_fnlnoisetype(z__argp_get());
+        }
+        z__argp_elifarg(&ne.noise.seed, "-ns", "--noise_seed")
+        z__argp_elifarg(&ne.noise.frequency, "-nf", "--noise_freq")
+        z__argp_elifarg(&ne.noise.gain, "-ng", "--noise_gain")
+        z__argp_elifarg(&ne.noise.octaves, "-no", "--noise_oct")
+
+        z__argp_elifarg(&ne.noise.cellular_jitter_mod, "--cellj")
+        z__argp_elifarg(&ne.noise.domain_warp_amp, "--domamp")
+
+        /**
+         * Write to a png file
+         */
+        z__argp_elifarg_custom("-r", "--write") {
+            z__argp_next();
+            ne.write_to_file = 1;
+            ne.write_to_file_name = z__argp_get();
+        }
+
+        /**
+         * Explorer Mode
+         */
+        z__argp_elifarg_custom("-e") {
+            ne.explorer = 1;
+        }
+
+        /**
+         * Draw Stuff
+         */
+        z__argp_elifarg_custom("-p", "--noprint") {
+           ne.no_print = 1; 
+        }
+
+        z__argp_elifarg_custom("-d", "--draw") {
+            z__argp_next();
+            ne.draw = get_drawmethod(z__argp_get());
+        }
+
+        /**
+         * OFormat Stuff
+         */
+        z__argp_elifarg_custom("--cc") {
+            z__argp_next();
+            oft_replace_chlist(oft, z__argp_get(), strlen(z__argp_get()));
+        }
+
+        z__argp_elifarg(&ne.color, "-c", "--color_num")
+
+        z__argp_elifarg_custom("--cmd") {
+            z__argp_next();
+            oft_command_parse(z__argp_get(), oft);
+            ne.custom_oft_colorl = 1;
+        }
+
+        z__argp_elifarg_custom("--cmdfile") {
+            z__argp_next();
+            ne.custom_oft_colorl |= oft_readFromFile(oft, z__argp_get()).st.color_changed;
+        }
+
+        z__argp_elifarg_custom("-v", "--verbose") {
+            ne.verbose = 1;
+        }
+
+        /**
+         * Help
+         */
+        z__argp_elifarg_custom("-?", "--help") {
+            puts(HELP_INTRO HELP_TXT);
+            ne.exit = 1;
+            return ne;
+        }
+    }
+
+    return ne;
+}
+
 int main(int argc, char *argv[])
 {
 
     /* Color and Char Format */
-    OFormat oft = oft_new(
+    OFormat oft = oft_new("0123456789ABCDEF", sizeof "0123456789ABCDEF"-1);
+            /*oft_new(
             "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "
           , sizeof "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. " -1);
+          */
 
     
     struct ne_state ne = argparse(argv, argc, &oft);
+    if(ne.exit) {
+        oft_delete(&oft);
+        return 0;
+    }
 
     /**
      * Auto Generate Color Map if not set by the user.
@@ -733,10 +739,10 @@ int main(int argc, char *argv[])
     if(!ne.custom_oft_colorl) {
         oft_push_color_map(
             &oft, 0, ne.color
-            , (ColorRGB){{0, 0, 0}}
-            , (ColorRGB){{0, 0, 0}}
-            , (ColorRGB){{1, 1, 1}}
-            , (ColorRGB){{1, 1, 1}}
+            , (ColorRGB){.raw = {0, 0, 0}}
+            , (ColorRGB){.raw = {0, 0, 0}}
+            , (ColorRGB){.raw = {1, 1, 1}}
+            , (ColorRGB){.raw = {1, 1, 1}}
             , clr_add);
     }
 
