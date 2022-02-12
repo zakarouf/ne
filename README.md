@@ -27,27 +27,25 @@ COMMANDS:
 -x     --startx [N]        Set x start cord
 -y     --starty [N]        Set y start cord
 
--nt     --noise_type [S]   Set noise
+--n+
+    t    type [S]   Set noise
            | perlin
            | os2
            | os2s
            | cell
            | val
            | valc
-
--ns    --noise_seed [N]    Set Noise Seed
--nf    --noise_freq [F]    Set Noise Frequency, [F] must be between 0.0 and 1.0
--no    --noise_oct [N]     Set Noise Ocatave
--ng    --noise_gain [F]    Set Noise Gain
-
---nft   { fmb|riged|pp|dprog|dind } def:none 
---nc    { eu|eusq|hybrid|manhat }
---nct   { d|cell|d2|d2add|d2sub|d2div|d2mul }
---ndw   { grid|os2|os2r } def: os2
---n3d   { xz|xy }
-
---cellj [N]                Set Cellular Jitter Mod
---domamp  [N]              Set Domain Wrap Amplifier
+    s    seed [N]          Set Noise Seed
+    f    freq [F]          Set Noise Frequency, [F] must be between 0.0 and 1.0
+    o    oct [N]           Set Noise Ocatave
+    g    gain [F]          Set Noise Gain
+    ft   { fmb|riged|pp|dprog|dind } def:none 
+    c    { eu|eusq|hybrid|manhat }
+    ct   { d|cell|d2|d2add|d2sub|d2div|d2mul }
+    dw   { grid|os2|os2r } def: os2
+    3d   { xz|xy }
+    cj [N]                 Set Cellular Jitter Mod
+    dwamp  [N]             Set Domain Wrap Amplifier
 
 -r     --write [S]         Create an image file (.png)
 
@@ -58,6 +56,8 @@ cmd:
   r [FN] [N] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]
   l [FN] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]
   c [STRING]
+  b [N] #[new_color]
+  f [N] #[new_color]
 
 -p     --noprint           Toggle off terminal print
 -d     --draw [S]          Set in Draw Mode/Method
