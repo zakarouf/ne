@@ -32,6 +32,7 @@
     "Powered by nothings/stb & Auburn/FastNoiseLite\n"
 
 #define HELP_TXT\
+    "\nCOMMANDS:\n"\
     "-w     --witdh [N]         Set Width\n"\
     "-h     --height [N]        Set Height\n"\
     "-x     --startx [N]        Set x start cord\n"\
@@ -46,20 +47,19 @@
     "           | valc\n"\
     "\n"\
     "-ns    --noise_seed [N]    Set Noise Seed\n"\
-    "-nf    --noise_freq [F]    Set Noise Frequency,\n"\
-    "                             [F] must be between 0.0 and 1.0\n"\
+    "-nf    --noise_freq [F]    Set Noise Frequency, [F] must be between 0.0 and 1.0\n"\
     "-no    --noise_oct [N]     Set Noise Ocatave\n"\
     "-ng    --noise_gain [F]    Set Noise Gain\n"\
     "\n"\
     "--cellj [N]                Set Cellular Jitter Mod\n"\
     "--domamp  [N]              Set Domain Wrap Amplifier\n"\
     "\n"\
-    "-r     --write [S]         Write to a named[S] file\n"\
+    "-r     --write [S]         Create an image file (.png)\n"\
     "\n"\
     "--cmd \"[CMD]\"\n"\
     "--cmdfile [FILE]           Read Color and Char format from file\n"\
     "\n"\
-    "-p    --noprint            Toggle oof terminal print\n"\
+    "-p     --noprint           Toggle off terminal print\n"\
     "-d     --draw [S]          Set in Draw Mode/Method\n"\
     "           | char          Only Characters, Colorless\n"\
     "           | obg           Only Background Color\n"\
