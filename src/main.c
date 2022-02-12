@@ -58,6 +58,11 @@
     "\n"\
     "--cmd \"[CMD]\"\n"\
     "--cmdfile [FILE]           Read Color and Char format from file\n"\
+    "cmd:\n"\
+    "  p #[fg] [bg]\n"\
+    "  r [FN] [N] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
+    "  l [FN] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
+    "  c [STRING]\n"\
     "\n"\
     "-p     --noprint           Toggle off terminal print\n"\
     "-d     --draw [S]          Set in Draw Mode/Method\n"\
