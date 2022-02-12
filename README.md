@@ -16,10 +16,12 @@ gcc -Wall -O3 -lzkcollection -lzkzsf -fopenmp src/main.c -o ne
 
 ### Commands
 
-```sh
-./ne --help
+```rust
+>>> ne --help
 Noise Explorer by zakarouf 2022 - 2023
 Powered by nothings/stb & Auburn/FastNoiseLite
+
+COMMANDS:
 -w     --witdh [N]         Set Width
 -h     --height [N]        Set Height
 -x     --startx [N]        Set x start cord
@@ -34,25 +36,32 @@ Powered by nothings/stb & Auburn/FastNoiseLite
            | valc
 
 -ns    --noise_seed [N]    Set Noise Seed
--nf    --noise_freq [F]    Set Noise Frequency,
-                             [F] must be between 0.0 and 1.0
+-nf    --noise_freq [F]    Set Noise Frequency, [F] must be between 0.0 and 1.0
 -no    --noise_oct [N]     Set Noise Ocatave
 -ng    --noise_gain [F]    Set Noise Gain
+
+--nft   { fmb|riged|pp|dprog|dind } def:none 
+--nc    { eu|eusq|hybrid|manhat }
+--nct   { d|cell|d2|d2add|d2sub|d2div|d2mul }
+--ndw   { grid|os2|os2r } def: os2
+--n3d   { xz|xy }
 
 --cellj [N]                Set Cellular Jitter Mod
 --domamp  [N]              Set Domain Wrap Amplifier
 
--r     --write [S]         Write to a named[S] file
+-r     --write [S]         Create an image file (.png)
 
--f     --file [S]              Read Color and Char format from file
--cc    --charlist [S]          Get Character maplist, lower to higher
---cp [r,g,b] [r,g,b]           Push Color, disables auto-gen colors
---clp [S] [N] [N] [r,g,b]x4    Push a generated color map
+--cmd "[CMD]"
+--cmdfile [FILE]           Read Color and Char format from file
+cmd:
+  p #[fg] [bg]
+  r [FN] [N] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]
+  l [FN] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]
+  c [STRING]
 
--np    --noprint           Toggle oof terminal print
+-p     --noprint           Toggle off terminal print
 -d     --draw [S]          Set in Draw Mode/Method
            | char          Only Characters, Colorless
            | obg           Only Background Color
 -e                         Start In Explorer Mode
-
 ```
