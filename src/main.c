@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
+#include <z_/types/base.h>
 #include <z_/types/record.h>
 #include <z_/types/base_util.h>
 #include <z_/types/enum.h>
@@ -31,6 +32,35 @@
     "Noise Explorer by zakarouf 2022 - 2023\n"\
     "Powered by nothings/stb & Auburn/FastNoiseLite\n"
 
+#define HELP_TXT_NOISE\
+    "    t    type [S]   Set noise\n"\
+    "           | perlin\n"\
+    "           | os2\n"\
+    "           | os2s\n"\
+    "           | cell\n"\
+    "           | val\n"\
+    "           | valc\n"\
+    "    s    seed [N]          Set Noise Seed\n"\
+    "    f    freq [F]          Set Noise Frequency, [F] must be between 0.0 and 1.0\n"\
+    "    o    oct [N]           Set Noise Ocatave\n"\
+    "    g    gain [F]          Set Noise Gain\n"\
+    "    ft   { fmb|riged|pp|dprog|dind } def:none \n"\
+    "    c    { eu|eusq|hybrid|manhat }\n"\
+    "    ct   { d|cell|d2|d2add|d2sub|d2div|d2mul }\n"\
+    "    dw   { grid|os2|os2r } def: os2\n"\
+    "    3d   { xz|xy }\n"\
+    "    cj [N]                 Set Cellular Jitter Mod\n"\
+    "    dwamp  [N]             Set Domain Wrap Amplifier\n"\
+
+#define HELP_TXT_COLOR\
+    "  p #[fg] [bg]\n"\
+    "  r [FN] [N] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
+    "  l [FN] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
+    "  c [STRING]\n"\
+    "  b [N] #[new_color]\n"\
+    "  f [N] #[new_color]\n"\
+
+
 #define HELP_TXT\
     "\nCOMMANDS:\n"\
     "-w     --witdh [N]         Set Width\n"\
@@ -38,37 +68,15 @@
     "-x     --startx [N]        Set x start cord\n"\
     "-y     --starty [N]        Set y start cord\n"\
     "\n"\
-    "-nt     --noise_type [S]   Set noise\n"\
-    "           | perlin\n"\
-    "           | os2\n"\
-    "           | os2s\n"\
-    "           | cell\n"\
-    "           | val\n"\
-    "           | valc\n"\
-    "\n"\
-    "-ns    --noise_seed [N]    Set Noise Seed\n"\
-    "-nf    --noise_freq [F]    Set Noise Frequency, [F] must be between 0.0 and 1.0\n"\
-    "-no    --noise_oct [N]     Set Noise Ocatave\n"\
-    "-ng    --noise_gain [F]    Set Noise Gain\n"\
-    "\n"\
-    "--nft   { fmb|riged|pp|dprog|dind } def:none \n"\
-    "--nc    { eu|eusq|hybrid|manhat }\n"\
-    "--nct   { d|cell|d2|d2add|d2sub|d2div|d2mul }\n"\
-    "--ndw   { grid|os2|os2r } def: os2\n"\
-    "--n3d   { xz|xy }\n"\
-    "\n"\
-    "--cellj [N]                Set Cellular Jitter Mod\n"\
-    "--domamp  [N]              Set Domain Wrap Amplifier\n"\
+    "--n+\n"\
+    HELP_TXT_NOISE\
     "\n"\
     "-r     --write [S]         Create an image file (.png)\n"\
     "\n"\
     "--cmd \"[CMD]\"\n"\
     "--cmdfile [FILE]           Read Color and Char format from file\n"\
     "cmd:\n"\
-    "  p #[fg] [bg]\n"\
-    "  r [FN] [N] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
-    "  l [FN] [N] #[basefg] #[basebg] #[stepfg] #[stepbg]\n"\
-    "  c [STRING]\n"\
+    HELP_TXT_COLOR\
     "\n"\
     "-p     --noprint           Toggle off terminal print\n"\
     "-d     --draw [S]          Set in Draw Mode/Method\n"\
@@ -105,16 +113,18 @@ typedef struct OFormat {
 } OFormat;
 
 typedef void (Drawfn)(Map *map, OFormat *oft);
+typedef void (GenMapFn)(Map *map, OFormat *oft, fnl_state *noise, z__Vector3 start);
 typedef ColorRGB (ColorMathFn)(ColorRGB, ColorRGB);
 
 struct ne_state {
     z__u32 witdh, height;
-    z__i32 x, y;
+    z__Vector3 start;
     fnl_state noise;
     z__u32 color;
     char const *write_to_file_name;
     z__u32 startx, starty;
     Drawfn *draw;
+    GenMapFn *gen;
     char write_to_file:1
        , read_color:1
        , no_print:1
@@ -333,6 +343,25 @@ oft_command_parse_result oft_command_parse(char const *str, OFormat *oft)
             oft_replace_chlist(oft, str + 2, tmp - str + 2);
             ret.st.ch_changed = 1;
         }
+        break; case 'b': {
+            ColorRGB cl = {0}; z__size idx;
+            sscanf(str+2, "%zu "
+                          "%02hhx%02hhx%02hhx"
+                        , &idx
+                        , &cl.r, &cl.g, &cl.b);
+
+            if(idx < oft->color_lenUsed) oft_change_color(oft, idx, oft->color.fg[idx], cl);
+        }
+
+        break; case 'f': {
+            ColorRGB cl = {0}; z__size idx;
+            sscanf(str+2, "%zu "
+                          "%02hhx%02hhx%02hhx"
+                        , &idx
+                        , &cl.r, &cl.g, &cl.b);
+
+            if(idx < oft->color_lenUsed) oft_change_color(oft, idx, cl, oft->color.bg[idx]);
+        }
     }
     return ret;
 }
@@ -463,7 +492,7 @@ void draw_map_char(Map *map, OFormat *oft)
     }
 }
 
-void gen_map(Map *map, OFormat *oft, fnl_state *noise, int startx, int starty)
+void gen_map2D(Map *map, OFormat *oft, fnl_state *noise, z__Vector3 start)
 {
     z__size f = oft->color_lenUsed/2;
     z__size g = oft->ch_lenUsed/2;
@@ -471,7 +500,7 @@ void gen_map(Map *map, OFormat *oft, fnl_state *noise, int startx, int starty)
     z__omp(parallel for private(x, y))
         for (x = 0; x < map->size.x; x++) {
             for (y = 0; y < map->size.y; y++) {
-                float n = fnlGetNoise2D(noise, startx + x, starty + y);
+                float n = fnlGetNoise2D(noise, start.x + x, start.y + y);
                 MapPlot plot = {
                     .ch = fmod((n+1) * g,  oft->ch_lenUsed),
                     .clr_bg = fmod((n+1.0) * f, oft->color_lenUsed),
@@ -480,6 +509,26 @@ void gen_map(Map *map, OFormat *oft, fnl_state *noise, int startx, int starty)
             }
         }
 }
+
+void gen_map3D(Map *map, OFormat *oft, fnl_state *noise, z__Vector3 start)
+{
+    z__size f = oft->color_lenUsed/2;
+    z__size g = oft->ch_lenUsed/2;
+    z__size x = 0, y = 0;
+    z__omp(parallel for private(x, y))
+        for (x = 0; x < map->size.x; x++) {
+            for (y = 0; y < map->size.y; y++) {
+                float n = fnlGetNoise3D(noise, start.x + x, start.y + y, start.z);
+                MapPlot plot = {
+                    .ch = fmod((n+1) * g,  oft->ch_lenUsed),
+                    .clr_bg = fmod((n+1.0) * f, oft->color_lenUsed),
+                };
+                zsf_MapCh_setcr(map, x, y, 0, 0, plot);
+            }
+        }
+}
+
+
 
 #if 0
 void gen_map_seg(Map *map, z__Vint2 end, OFormat *oft, fnl_state *noise, int startx, int starty)
@@ -504,45 +553,105 @@ void gen_map_seg(Map *map, z__Vint2 end, OFormat *oft, fnl_state *noise, int sta
 }
 #endif
 
-void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, z__u32 x, z__u32 y)
+void explorer(Map *map, OFormat *oft, fnl_state *noise, Drawfn draw, GenMapFn gen, z__Vector3 at)
 {
-    char key = 0, tmpkey;
-    Map *mapbg = z__MALLOC(sizeof(*mapbg));
-    zsf_MapCh_createEmpty(mapbg, map->size.x, map->size.y, map->size.z, map->chunkRadius);
+    struct {
+        z__u8
+            cont:1;
+    } exp = {
+        .cont = 1,
+    };
+
+    z__Vector3 vel = {0};
+
+    char key = 0;
 
     fputs(z__ansi_scr((cur_hide), (jump), (clear)), stdout);
     z__termio_echo(false);
     while(key != 'q') {
         switch(key) {
-            break; case 'w': y--;
-            break; case 's': y++;
-            break; case 'a': x--;
-            break; case 'd': x++;
+            break; case 'w': vel.y--;
+            break; case 's': vel.y++;
+            break; case 'a': vel.x--;
+            break; case 'd': vel.x++;
 
-            break; case 'W': y -= 4;
-            break; case 'S': y += 4;
-            break; case 'A': x -= 4;
-            break; case 'D': x += 4;
+            break; case 'W': vel.y -= 4;
+            break; case 'S': vel.y += 4;
+            break; case 'A': vel.x -= 4;
+            break; case 'D': vel.x += 4;
+
+            break; case 'z': vel.z--;
+            break; case 'x': vel.z++;
+
+            break; case 'Z': vel.z -= 4;
+            break; case 'X': vel.z += 4;
+
+            break; case '[': gen = gen_map2D;
+            break; case ']': gen = gen_map3D;
 
             break; case '1': draw = draw_map_char;
             break; case '2': draw = draw_map_bgcolor;
+
+            break; case ':': {
+                fputs(z__ansi_scr((cur_show))":", stdout);
+                z__termio_echo(true); z__termio_getkey_nowait();
+                switch(z__termio_getkey()) {
+                    break; case 'c': exp.cont = !exp.cont;
+                    break; case 'n': {
+                        char tmp[12] = { [11] = 0 };
+                        char tmp2[96] = { [95] = 0};
+                        scanf("%11s %95s", tmp, tmp2);
+                        int set_noise_argparse(fnl_state *noise, const char *arg0, const char *arg1);
+                        set_noise_argparse(noise, tmp, tmp2);
+                    }
+
+                    break; case 'l': {
+                        char tmp[128];
+                        oft_command_parse(fgets(tmp, 127, stdin), oft);
+                    }
+
+                    break; case 'h': fputs(
+                            z__ansi_scr((jump), (clear))
+                            "Color:\n"
+                            HELP_TXT_COLOR
+                            "\n"
+                            "Fnl Noise:\n"
+                            HELP_TXT_NOISE
+                            "\n"
+                            "\n", stdout);
+
+                    break; default: 
+                        fputs("Not a Valid Command\n", stdout);
+                }
+                fputs("Press Any Key\n", stdout);
+                z__termio_getkey();
+                z__termio_echo(false);
+                fputs(z__ansi_scr((cur_hide), (jump), (clear)), stdout);
+            }
         }
 
-        gen_map(map, oft, noise, x, y);
+        z__Vector3_A(at, vel, +, &at);
+        if(!exp.cont) {
+            vel.raw[0] = 0;
+            vel.raw[1] = 0;
+            vel.raw[2] = 0;
+        }
+
+        gen(map, oft, noise, at);
 
         fputs(z__ansi_scr((jump)), stdout);
         draw(map, oft);
         fputs(z__ansi_fmt((plain)), stdout);
 
-        tmpkey = z__termio_getkey_nowait();
-        key = tmpkey? tmpkey: key;
+        key = z__termio_getkey_nowait();
         z__time_msleep(40);
     }
     fputs(z__ansi_scr((cur_show)), stdout);
     z__termio_echo(true);
 
-    fprintf(stdout, "x - %u\n"
-                    "y - %u\n", x, y);
+    fprintf(stdout, "x - %f\n"
+                    "y - %f\n"
+                    "z = %f\n", at.x, at.y, at.z);
 }
 
 void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
@@ -597,9 +706,9 @@ void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
     fputc('\n', stdout);
 }
 
-fnl_noise_type get_fnl_noisetype(char *arg)
+fnl_noise_type get_fnl_noisetype(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("perlin")      return FNL_NOISE_PERLIN;
         z__argp_elifarg_custom("os2")       return FNL_NOISE_OPENSIMPLEX2;
@@ -613,9 +722,9 @@ fnl_noise_type get_fnl_noisetype(char *arg)
     return FNL_NOISE_PERLIN;
 }
 
-Drawfn* get_drawmethod(char *arg)
+Drawfn* get_drawmethod(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("char")    return draw_map_char;
         z__argp_elifarg_custom("obg")      return draw_map_bgcolor;
@@ -625,9 +734,9 @@ Drawfn* get_drawmethod(char *arg)
     return draw_map_bgcolor;
 }
 
-fnl_fractal_type get_fnl_fractal_type(char *arg)
+fnl_fractal_type get_fnl_fractal_type(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("fbm") return FNL_FRACTAL_FBM;
         z__argp_elifarg_custom("riged") return FNL_FRACTAL_RIDGED;
@@ -639,9 +748,9 @@ fnl_fractal_type get_fnl_fractal_type(char *arg)
     return FNL_FRACTAL_NONE;
 }
 
-fnl_cellular_distance_func get_fnl_cell_dist(char *arg)
+fnl_cellular_distance_func get_fnl_cell_dist(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("eu") return FNL_CELLULAR_DISTANCE_EUCLIDEAN;
         z__argp_elifarg_custom("eusq") return FNL_CELLULAR_DISTANCE_EUCLIDEANSQ;
@@ -652,9 +761,9 @@ fnl_cellular_distance_func get_fnl_cell_dist(char *arg)
 }
 
 
-fnl_cellular_return_type get_fnl_cell_rett(char *arg)
+fnl_cellular_return_type get_fnl_cell_rett(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("d") return FNL_CELLULAR_RETURN_VALUE_DISTANCE;
         z__argp_elifarg_custom("cell") return FNL_CELLULAR_RETURN_VALUE_CELLVALUE;
@@ -667,9 +776,9 @@ fnl_cellular_return_type get_fnl_cell_rett(char *arg)
     return FNL_CELLULAR_RETURN_VALUE_DISTANCE;
 }
 
-fnl_domain_warp_type get_fnl_dom_wrap(char *arg)
+fnl_domain_warp_type get_fnl_dom_wrap(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("grid") return FNL_DOMAIN_WARP_BASICGRID;
         z__argp_elifarg_custom("os2") return FNL_DOMAIN_WARP_OPENSIMPLEX2;
@@ -678,9 +787,9 @@ fnl_domain_warp_type get_fnl_dom_wrap(char *arg)
     return FNL_DOMAIN_WARP_OPENSIMPLEX2;
 }
 
-fnl_rotation_type_3d get_fnl_3d_rott(char *arg)
+fnl_rotation_type_3d get_fnl_3d_rott(char const *arg)
 {
-    char **s = &arg;
+    char const **s = &arg;
     z__argp_start(s, 0, 1) {
         z__argp_ifarg_custom("xy") return FNL_ROTATION_IMPROVE_XY_PLANES;
         z__argp_elifarg_custom("xz") return FNL_ROTATION_IMPROVE_XZ_PLANES;
@@ -688,7 +797,56 @@ fnl_rotation_type_3d get_fnl_3d_rott(char *arg)
     return FNL_ROTATION_NONE;
 }
 
-struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
+int set_noise_argparse(fnl_state *noise, const char *arg0, const char *arg1)
+{
+    const char **s = &arg0;
+    z__argp_start(s, 0, 1) {
+        /**
+         * Noise Stuff
+         */
+        z__argp_ifarg_custom("t", "oise_type") {
+            noise->noise_type = get_fnl_noisetype(arg1);
+        }
+
+        z__argp_elifarg_custom("ft") {
+            noise->fractal_type = get_fnl_fractal_type(arg1);
+        }
+        z__argp_elifarg_custom("c") {
+            noise->cellular_distance_func = get_fnl_cell_dist(arg1);
+        }
+        z__argp_elifarg_custom("ct") {
+            noise->cellular_return_type = get_fnl_cell_rett(arg1);
+        }
+        z__argp_elifarg_custom("3d") {
+            noise->rotation_type_3d = get_fnl_3d_rott(arg1);
+        }
+        z__argp_elifarg_custom("dw") {
+            noise->domain_warp_type = get_fnl_dom_wrap(arg1);
+        }
+
+        z__argp_elifarg_custom("s", "seed") {
+            z__strto(arg1, &noise->seed);
+        }
+        z__argp_elifarg_custom("f", "freq") {
+            z__strto(arg1, &noise->frequency);
+        }
+        z__argp_elifarg_custom("g", "gain") {
+            z__strto(arg1, &noise->gain);
+        }
+        z__argp_elifarg_custom("o", "oct") {
+            z__strto(arg1, &noise->octaves);
+        }
+        z__argp_elifarg_custom("cj") {
+            z__strto(arg1, &noise->cellular_jitter_mod);
+        }
+        z__argp_elifarg_custom("dwamp") {
+            z__strto(arg1, &noise->domain_warp_amp);
+        }
+    }
+    return 1;
+}
+
+struct ne_state argparse(char const **argv, z__u32 argc, OFormat *oft)
 {
     struct ne_state ne = { 
         .height = 15
@@ -697,6 +855,7 @@ struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
       , .color = 255
       , .write_to_file_name = "stdout.png"
       , .draw = draw_map_bgcolor
+      , .gen = gen_map2D
     };
 
     z__argp_start(argv, 1, argc) {
@@ -706,45 +865,17 @@ struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
         z__argp_ifarg(&ne.witdh, "-w", "--width")
         z__argp_elifarg(&ne.height, "-h", "--height")
         
-        z__argp_elifarg(&ne.x, "-x", "--startx")
-        z__argp_elifarg(&ne.y, "-y", "--starty")
+        z__argp_elifarg(&ne.start.x, "-x", "--startx")
+        z__argp_elifarg(&ne.start.y, "-y", "--starty")
+        z__argp_elifarg(&ne.start.z, "-z", "--startz")
 
-        /**
-         * Noise Stuff
-         */
-        z__argp_elifarg_custom("--nt", "--noise_type") {
+        z__argp_elifarg_custom("--gen") {
             z__argp_next();
-            ne.noise.noise_type = get_fnl_noisetype(z__argp_get());
+            char const *tmp = z__argp_get();
+            if(tmp[0] == '3' && (tmp[1] == 'd' || tmp[1] == 'D')) ne.gen = gen_map3D;
+            else if(tmp[0] == '2' && (tmp[1] == 'd' || tmp[1] == 'D')) ne.gen = gen_map2D;
+            else ne.gen = gen_map2D;
         }
-
-        z__argp_elifarg_custom("--nft") {
-            z__argp_next();
-            ne.noise.fractal_type = get_fnl_fractal_type(z__argp_get());
-        }
-        z__argp_elifarg_custom("--nc") {
-            z__argp_next();
-            ne.noise.cellular_distance_func = get_fnl_cell_dist(z__argp_get());
-        }
-        z__argp_elifarg_custom("--nct") {
-            z__argp_next();
-            ne.noise.cellular_return_type = get_fnl_cell_rett(z__argp_get());
-        }
-        z__argp_elifarg_custom("--n3d") {
-            z__argp_next();
-            ne.noise.rotation_type_3d = get_fnl_3d_rott(z__argp_get());
-        }
-        z__argp_elifarg_custom("--ndw") {
-            z__argp_next();
-            ne.noise.domain_warp_type = get_fnl_dom_wrap(z__argp_get());
-        }
-
-        z__argp_elifarg(&ne.noise.seed, "-ns", "--noise_seed")
-        z__argp_elifarg(&ne.noise.frequency, "-nf", "--noise_freq")
-        z__argp_elifarg(&ne.noise.gain, "-ng", "--noise_gain")
-        z__argp_elifarg(&ne.noise.octaves, "-no", "--noise_oct")
-
-        z__argp_elifarg(&ne.noise.cellular_jitter_mod, "--cellj")
-        z__argp_elifarg(&ne.noise.domain_warp_amp, "--domamp")
 
         /**
          * Write to a png file
@@ -807,12 +938,22 @@ struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
             ne.exit = 1;
             return ne;
         }
+
+        else {
+            char const *s = z__argp_get();
+            if(s[0] == '-'
+            && s[1] == '-'
+            && s[2] == 'n') {
+                z__argp_next();
+                set_noise_argparse(&ne.noise, s + 3, z__argp_get());
+            }
+        }
     }
 
     return ne;
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char const *argv[])
 {
 
     /* Color and Char Format */
@@ -849,7 +990,7 @@ int main(int argc, char *argv[])
     Map *map = z__MALLOC(sizeof *map);
     zsf_MapCh_createEmpty(map, ne.witdh, ne.height, 1, 0);
    
-    gen_map(map, &oft, &ne.noise, ne.x, ne.y);
+    ne.gen(map, &oft, &ne.noise, ne.start);
     
     if(!ne.explorer) {
         if(!ne.no_print) {
@@ -860,7 +1001,7 @@ int main(int argc, char *argv[])
         z__u32 x, y;
         z__termio_get_term_size(&x, &y);
         if(x > map->size.x && y > map->size.y) {
-            explorer(map, &oft, &ne.noise, ne.draw, ne.x, ne.y);
+            explorer(map, &oft, &ne.noise, ne.draw, ne.gen, ne.start);
         } else {
             printf("Your Terminal Size %d rows, %d colums are too small for generated noise map: %d x %d"
                     , y, x, map->size.x, map->size.y);
