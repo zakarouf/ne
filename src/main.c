@@ -51,6 +51,12 @@
     "-no    --noise_oct [N]     Set Noise Ocatave\n"\
     "-ng    --noise_gain [F]    Set Noise Gain\n"\
     "\n"\
+    "--nft   { fmb|riged|pp|dprog|dind } def:none \n"\
+    "--nc    { eu|eusq|hybrid|manhat }\n"\
+    "--nct   { d|cell|d2|d2add|d2sub|d2div|d2mul }\n"\
+    "--ndw   { grid|os2|os2r } def: os2\n"\
+    "--n3d   { xz|xy }\n"\
+    "\n"\
     "--cellj [N]                Set Cellular Jitter Mod\n"\
     "--domamp  [N]              Set Domain Wrap Amplifier\n"\
     "\n"\
@@ -591,7 +597,7 @@ void print_state_details(struct ne_state *ne, OFormat *oft, Map *map)
     fputc('\n', stdout);
 }
 
-fnl_noise_type get_fnlnoisetype(char *arg)
+fnl_noise_type get_fnl_noisetype(char *arg)
 {
     char **s = &arg;
     z__argp_start(s, 0, 1) {
@@ -619,6 +625,69 @@ Drawfn* get_drawmethod(char *arg)
     return draw_map_bgcolor;
 }
 
+fnl_fractal_type get_fnl_fractal_type(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("fbm") return FNL_FRACTAL_FBM;
+        z__argp_elifarg_custom("riged") return FNL_FRACTAL_RIDGED;
+        z__argp_elifarg_custom("pp") return FNL_FRACTAL_PINGPONG;
+        z__argp_elifarg_custom("dwprog") return FNL_FRACTAL_DOMAIN_WARP_PROGRESSIVE;
+        z__argp_elifarg_custom("dwind") return FNL_FRACTAL_DOMAIN_WARP_INDEPENDENT;
+    }
+    printf("`%s` Not a Valid Fractype, Defaulting to Only BG Color\n", *s);
+    return FNL_FRACTAL_NONE;
+}
+
+fnl_cellular_distance_func get_fnl_cell_dist(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("eu") return FNL_CELLULAR_DISTANCE_EUCLIDEAN;
+        z__argp_elifarg_custom("eusq") return FNL_CELLULAR_DISTANCE_EUCLIDEANSQ;
+        z__argp_elifarg_custom("hybrid") return FNL_CELLULAR_DISTANCE_HYBRID;
+        z__argp_elifarg_custom("manhat") return FNL_CELLULAR_DISTANCE_MANHATTAN;
+    }
+    return FNL_CELLULAR_DISTANCE_EUCLIDEAN;
+}
+
+
+fnl_cellular_return_type get_fnl_cell_rett(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("d") return FNL_CELLULAR_RETURN_VALUE_DISTANCE;
+        z__argp_elifarg_custom("cell") return FNL_CELLULAR_RETURN_VALUE_CELLVALUE;
+        z__argp_elifarg_custom("d2") return FNL_CELLULAR_RETURN_VALUE_DISTANCE2;
+        z__argp_elifarg_custom("d2add") return FNL_CELLULAR_RETURN_VALUE_DISTANCE2ADD;
+        z__argp_elifarg_custom("d2div") return FNL_CELLULAR_RETURN_VALUE_DISTANCE2DIV;
+        z__argp_elifarg_custom("d2mul") return FNL_CELLULAR_RETURN_VALUE_DISTANCE2MUL;
+        z__argp_elifarg_custom("d2sub") return FNL_CELLULAR_RETURN_VALUE_DISTANCE2SUB;
+    }
+    return FNL_CELLULAR_RETURN_VALUE_DISTANCE;
+}
+
+fnl_domain_warp_type get_fnl_dom_wrap(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("grid") return FNL_DOMAIN_WARP_BASICGRID;
+        z__argp_elifarg_custom("os2") return FNL_DOMAIN_WARP_OPENSIMPLEX2;
+        z__argp_elifarg_custom("os2r") return FNL_DOMAIN_WARP_OPENSIMPLEX2_REDUCED;
+    }
+    return FNL_DOMAIN_WARP_OPENSIMPLEX2;
+}
+
+fnl_rotation_type_3d get_fnl_3d_rott(char *arg)
+{
+    char **s = &arg;
+    z__argp_start(s, 0, 1) {
+        z__argp_ifarg_custom("xy") return FNL_ROTATION_IMPROVE_XY_PLANES;
+        z__argp_elifarg_custom("xz") return FNL_ROTATION_IMPROVE_XZ_PLANES;
+    }
+    return FNL_ROTATION_NONE;
+}
+
 struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
 {
     struct ne_state ne = { 
@@ -643,10 +712,32 @@ struct ne_state argparse(char **argv, z__u32 argc, OFormat *oft)
         /**
          * Noise Stuff
          */
-        z__argp_elifarg_custom("-nt", "--noise_type") {
+        z__argp_elifarg_custom("--nt", "--noise_type") {
             z__argp_next();
-            ne.noise.noise_type = get_fnlnoisetype(z__argp_get());
+            ne.noise.noise_type = get_fnl_noisetype(z__argp_get());
         }
+
+        z__argp_elifarg_custom("--nft") {
+            z__argp_next();
+            ne.noise.fractal_type = get_fnl_fractal_type(z__argp_get());
+        }
+        z__argp_elifarg_custom("--nc") {
+            z__argp_next();
+            ne.noise.cellular_distance_func = get_fnl_cell_dist(z__argp_get());
+        }
+        z__argp_elifarg_custom("--nct") {
+            z__argp_next();
+            ne.noise.cellular_return_type = get_fnl_cell_rett(z__argp_get());
+        }
+        z__argp_elifarg_custom("--n3d") {
+            z__argp_next();
+            ne.noise.rotation_type_3d = get_fnl_3d_rott(z__argp_get());
+        }
+        z__argp_elifarg_custom("--ndw") {
+            z__argp_next();
+            ne.noise.domain_warp_type = get_fnl_dom_wrap(z__argp_get());
+        }
+
         z__argp_elifarg(&ne.noise.seed, "-ns", "--noise_seed")
         z__argp_elifarg(&ne.noise.frequency, "-nf", "--noise_freq")
         z__argp_elifarg(&ne.noise.gain, "-ng", "--noise_gain")
