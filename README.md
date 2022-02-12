@@ -1,5 +1,9 @@
 # Noise Explorer
 
+<p align="center">
+<a href="https://asciinema.org/a/468494"><img src="https://asciinema.org/a/468494.svg" alt="ne_example" width="600"/></a>
+</p>
+
 Noise Explorer tui for [Auburn's FastNoiseLite](https://github.com/Auburn/FastNoiseLite/).
 - [stb image](https://github.com/nothings/stb) is included.
 
